@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Client w/ Subscribers example</title>
+        <script>
+            var ws
+            window.onload = () => {
+                if ( ! window['WebSocket']) {
+                    document.body.innerHTML = "Your browser doesn't support Websockets.";
+                    return
+                }
+
+                ws = createWebSocket()
+
+                const channels = document.getElementById('channels')
+                const output = document.getElementById('output')
+                const broadcast = document.getElementById('broadcast')
+                checkChannelsPeriodically()
+                broadcast.addEventListener('click', broadcastMessage)
+            }
+
+            const createWebSocket = () => {
+                const ws = new WebSocket("ws://"+document.location.host+"/connect")
+                ws.onopen = ev => {
+                    displayChannels(channels)
+                    writeWebsocketIPToTitle()
+                }
+                ws.onclose = ev => {
+                    doOutput("<strong>Broadcast closed</strong>")
+                }
+                ws.onmessage = ev => {
+                    const messages = ev.data.split('\n')
+                    for (let i = 0; i < messages.length; i++) {
+                        doOutput(messages[i])
+                    }
+                }
+
+                return ws
+            }
+
+            const checkChannelsPeriodically = () => {
+                setInterval(() => {
+                    displayChannels(channels)
+                }, 1000)
+            }
+            const displayChannels = async channelDiv => {
+                const channels = await fetch('/channels').then(response => response.json())
+                channelDiv.innerHTML = ''
+                const channelsOrdered = channels.sort()
+                for (let i = 0; i < channelsOrdered.length; i++) {
+                    const subscribeButton = document.createElement('button') // Make buttons
+                    subscribeButton.innerText = channelsOrdered[i]
+                    subscribeButton.addEventListener('click', subscribeTo)
+                    const child = document.createElement('div')
+                    child.appendChild(subscribeButton)
+                    channelDiv.appendChild(child)
+                }
+                return
+            }
+            const subscribeTo = async ev => {
+                const ip = ev.target.innerHTML
+                await fetch('/subscribe?ip='+ip)
+            }
+            const broadcastMessage = () => {
+                const message = document.getElementById('message')
+                if (! message.value) {
+                    return
+                }
+                ws.send(message.value)
+                message.value = ''
+            }
+            const doOutput = message => {
+                block = document.createElement('div')
+                block.innerHTML = message
+                output.appendChild(block)
+            }
+            const writeWebsocketIPToTitle = () => {
+                const ip = getCookie('ws-ip')
+                document.title = 'Client ' + ip
+            }
+            const getCookie = cookieName => {
+                const name = cookieName + "=";
+                const decodedCookie = decodeURIComponent(document.cookie);
+                const cookies = decodedCookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    let cookie = cookies[i];
+                    while (cookie.charAt(0) == ' ') {
+                        cookie = cookie.substring(1);
+                    }
+                    if (cookie.indexOf(name) == 0) {
+                        return cookie.substring(name.length, cookie.length);
+                    }
+                }
+                return "";
+            }
+        </script>
+    </head>
+    <body>
+        <h3>Avaliable Channels</h3>
+        <div id="channels"></div>
+        <h3>Selected Channel Output</h3>
+        <div id="output"></div>
+        <h3>Send to subscribers</h3>
+        <input id="message" type="text">
+        <button id="broadcast">Broadcast</button>
+    </body>
+</html>
