@@ -10,53 +10,76 @@
                     return
                 }
 
-                ws = createWebSocket()
+                const channelDiv = document.getElementById('channels')
 
-                const channels = document.getElementById('channels')
+                ws = createWebSocket(channelDiv)
+
                 const output = document.getElementById('output')
                 const broadcast = document.getElementById('broadcast')
-                checkChannelsPeriodically()
                 broadcast.addEventListener('click', broadcastMessage)
             }
 
-            const createWebSocket = () => {
+            const createWebSocket = (channelDiv) => {
                 const ws = new WebSocket("ws://"+document.location.host+"/connect")
                 ws.onopen = ev => {
-                    displayChannels(channels)
+                    fetchAllChannels(channelDiv)
                     writeWebsocketIPToTitle()
                 }
                 ws.onclose = ev => {
                     doOutput("<strong>Broadcast closed</strong>")
                 }
                 ws.onmessage = ev => {
-                    const messages = ev.data.split('\n')
-                    for (let i = 0; i < messages.length; i++) {
-                        doOutput(messages[i])
-                    }
+                    messageBroker(channelDiv, ev.data)
                 }
 
                 return ws
             }
 
-            const checkChannelsPeriodically = () => {
-                setInterval(() => {
-                    displayChannels(channels)
-                }, 1000)
+            const messageBroker = (channelDiv, message) => {
+                const jsonMessage = JSON.parse(message)
+                if ( ! jsonMessage.type) {
+                    throw Error("no message type in message " + message)
+                } else if (jsonMessage.type == "broadcast") {
+                    doOutput(jsonMessage.body)
+                } else if (jsonMessage.type == "connect") {
+                    addChannel(channelDiv, jsonMessage.body)
+                } else if (jsonMessage.type == "disconnect") {
+                    removeChannel(channelDiv, jsonMessage.body)
+                } else {
+                    throw Error("unknown message type: " + jsonMessage.type)
+                }
             }
-            const displayChannels = async channelDiv => {
-                const channels = await fetch('/channels').then(response => response.json())
+
+            let channels = []
+            const fetchAllChannels = async channelDiv => {
+                channels = await fetch('/channels').then(response => response.json())
+                displayChannels(channelDiv)
+            }
+            const addChannel = (channelDiv, channel) => {
+                channels.push(channel)
+                displayChannels(channelDiv)
+            }
+            const removeChannel = (channelDiv, channel) => {
+                const index = channels.indexOf(channel)
+                if (index === -1) {
+                    throw Error("channel not found for removal: " + channel)
+                }
+                channels.splice(index, 1)
+                displayChannels(channelDiv)
+            }
+            const displayChannels = (channelDiv) => {
+                channels.sort()
                 channelDiv.innerHTML = ''
-                const channelsOrdered = channels.sort()
-                for (let i = 0; i < channelsOrdered.length; i++) {
-                    const subscribeButton = document.createElement('button') // Make buttons
-                    subscribeButton.innerText = channelsOrdered[i]
+                channels.forEach(channel => {
+                    const subscribeButton = document.createElement('button')
+                    subscribeButton.innerText = channel
                     subscribeButton.addEventListener('click', subscribeTo)
                     const child = document.createElement('div')
                     child.appendChild(subscribeButton)
                     channelDiv.appendChild(child)
-                }
-                return
+                })
             }
+
             const subscribeTo = async ev => {
                 const ip = ev.target.innerHTML
                 await fetch('/subscribe?ip='+ip)
@@ -74,6 +97,7 @@
                 block.innerHTML = message
                 output.appendChild(block)
             }
+
             const writeWebsocketIPToTitle = () => {
                 const ip = getCookie('ws-ip')
                 document.title = 'Client ' + ip
